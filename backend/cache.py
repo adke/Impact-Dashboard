@@ -46,34 +46,41 @@ def get_cached_engineers(days: int) -> dict | None:
         return _memory_cache.get(days)
 
 
-def _refresh(days: int) -> None:
+def _refresh(days: int, retries: int = 3) -> None:
     """Fetch from GitHub, compute scores, and update both memory and disk caches."""
-    print(f"[cache] Refreshing data for {days} days...")
-    start = time.time()
-    try:
-        pulls, comments = get_pr_data(GITHUB_TOKEN, REPO, days=days)
-        calculator = ImpactCalculator(pulls, comments, api_key=OPENROUTER_API_KEY, model=OPENROUTER_MODEL)
-        engineers = calculator.compute(top_n=TOP_N, days=days)
+    for attempt in range(1, retries + 1):
+        print(f"[cache] Refreshing data for {days} days (attempt {attempt}/{retries})...", flush=True)
+        start = time.time()
+        try:
+            pulls, comments = get_pr_data(GITHUB_TOKEN, REPO, days=days)
+            calculator = ImpactCalculator(pulls, comments, api_key=OPENROUTER_API_KEY, model=OPENROUTER_MODEL)
+            engineers = calculator.compute(top_n=TOP_N, days=days)
 
-        result = {
-            "engineers": engineers,
-            "meta": {
-                "repo": REPO,
-                "days": days,
-                "total_prs_analyzed": len(pulls),
-                "total_comments_analyzed": len(comments),
-                "cached": True,
-            },
-        }
+            result = {
+                "engineers": engineers,
+                "meta": {
+                    "repo": REPO,
+                    "days": days,
+                    "total_prs_analyzed": len(pulls),
+                    "total_comments_analyzed": len(comments),
+                    "cached": True,
+                },
+            }
 
-        with _lock:
-            _memory_cache[days] = result
-        _save_to_disk(days, result)
+            with _lock:
+                _memory_cache[days] = result
+            _save_to_disk(days, result)
 
-        elapsed = time.time() - start
-        print(f"[cache] Refresh complete for {days} days in {elapsed:.1f}s")
-    except Exception as e:
-        print(f"[cache] Refresh failed for {days} days: {e}")
+            elapsed = time.time() - start
+            print(f"[cache] Refresh complete for {days} days in {elapsed:.1f}s", flush=True)
+            return
+        except Exception as e:
+            elapsed = time.time() - start
+            print(f"[cache] Refresh failed for {days} days after {elapsed:.1f}s: {e}", flush=True)
+            if attempt < retries:
+                wait = 30 * attempt
+                print(f"[cache] Retrying in {wait}s...", flush=True)
+                time.sleep(wait)
 
 
 def _background_loop() -> None:

@@ -3,7 +3,7 @@ services:
     name: impact-dashboard
     runtime: python
     buildCommand: bash build.sh
-    startCommand: cd backend && gunicorn app:create_app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    startCommand: cd backend && gunicorn "app:create_app()" --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300
     envVars:
       - key: GITHUB_TOKEN
         sync: false
