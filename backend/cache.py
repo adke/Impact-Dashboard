@@ -43,7 +43,18 @@ def _save_to_disk(days: int, data: dict) -> None:
 
 def get_cached_engineers(days: int) -> dict | None:
     with _lock:
-        return _memory_cache.get(days)
+        result = _memory_cache.get(days)
+    if result is not None:
+        return result
+
+    # Memory cache miss — try disk (handles worker restarts / process isolation)
+    disk_data = _load_from_disk(days)
+    if disk_data is not None:
+        with _lock:
+            _memory_cache[days] = disk_data
+        print(f"[cache] Served {days}-day data from disk fallback (pid={os.getpid()})", flush=True)
+        return disk_data
+    return None
 
 
 def _refresh(days: int, retries: int = 3) -> None:
@@ -72,7 +83,7 @@ def _refresh(days: int, retries: int = 3) -> None:
             _save_to_disk(days, result)
 
             elapsed = time.time() - start
-            print(f"[cache] Refresh complete for {days} days in {elapsed:.1f}s", flush=True)
+            print(f"[cache] Refresh complete for {days} days in {elapsed:.1f}s (pid={os.getpid()})", flush=True)
             return
         except Exception as e:
             elapsed = time.time() - start
@@ -101,4 +112,4 @@ def _background_loop() -> None:
 def start_background_refresh() -> None:
     thread = threading.Thread(target=_background_loop, daemon=True)
     thread.start()
-    print("[cache] Background refresh thread started")
+    print(f"[cache] Background refresh thread started (pid={os.getpid()})", flush=True)
